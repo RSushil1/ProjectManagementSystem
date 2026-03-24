@@ -12,10 +12,17 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
+import authRouter from './routes/auth.routes';
+app.use('/api/auth', authRouter);
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
+
+export default app;
