@@ -11,6 +11,7 @@ import {
   addMember,
   removeMember
 } from '../controllers/projects.controller';
+import { triggerExport } from '../controllers/exports.controller';
 
 const router = Router();
 
@@ -44,5 +45,6 @@ router.put('/:id', validate(updateProjectSchema), updateProject);
 router.delete('/:id', deleteProject);
 router.post('/:id/members', validate(addMemberSchema), addMember);
 router.delete('/:id/members/:userId', removeMember);
+router.post('/:id/export', triggerExport);
 
 export default router;
