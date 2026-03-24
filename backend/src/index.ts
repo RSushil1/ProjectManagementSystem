@@ -14,9 +14,11 @@ app.use(express.json());
 
 import authRouter from './routes/auth.routes';
 import projectsRouter from './routes/projects.routes';
+import tasksRouter from './routes/tasks.routes';
 
 app.use('/api/auth', authRouter);
 app.use('/api/projects', projectsRouter);
+app.use('/api/tasks', tasksRouter);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
