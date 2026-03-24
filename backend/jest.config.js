@@ -5,4 +5,6 @@ module.exports = {
   setupFiles: ['<rootDir>/tests/setup.ts'],
   globalSetup: '<rootDir>/tests/globalSetup.ts',
   clearMocks: true,
+  // Run test suites sequentially to prevent parallel DB/Redis conflicts
+  runInBand: true,
 };

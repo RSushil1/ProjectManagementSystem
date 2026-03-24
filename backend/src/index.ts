@@ -13,7 +13,10 @@ app.use(cors());
 app.use(express.json());
 
 import authRouter from './routes/auth.routes';
+import projectsRouter from './routes/projects.routes';
+
 app.use('/api/auth', authRouter);
+app.use('/api/projects', projectsRouter);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
