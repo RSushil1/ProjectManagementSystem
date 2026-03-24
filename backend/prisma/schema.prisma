@@ -1,13 +1,108 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  email         String   @unique
+  password_hash String
+  created_at    DateTime @default(now())
+
+  owned_projects  Project[]
+  project_members ProjectMember[]
+  tasks_assigned  Task[]
+  exports         Export[]
+
+  @@map("users")
+}
+
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?  @db.Text
+  owner_id    String   @db.Uuid
+  created_at  DateTime @default(now())
+
+  owner User @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+
+  members ProjectMember[]
+  tasks   Task[]
+  exports Export[]
+
+  @@map("projects")
+}
+
+enum ProjectRole {
+  owner
+  member
+}
+
+model ProjectMember {
+  id         String      @id @default(uuid()) @db.Uuid
+  project_id String      @db.Uuid
+  user_id    String      @db.Uuid
+  role       ProjectRole
+  joined_at  DateTime    @default(now())
+
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([project_id, user_id])
+  @@map("project_members")
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  done
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+}
+
+model Task {
+  id          String       @id @default(uuid()) @db.Uuid
+  project_id  String       @db.Uuid
+  title       String
+  description String?      @db.Text
+  status      TaskStatus   @default(todo)
+  priority    TaskPriority @default(medium)
+  assigned_to String?      @db.Uuid
+  due_date    DateTime?    @db.Date
+  created_at  DateTime     @default(now())
+
+  project  Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  assignee User?   @relation(fields: [assigned_to], references: [id], onDelete: SetNull)
+
+  @@map("tasks")
+}
+
+enum ExportStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+model Export {
+  id           String       @id @default(uuid()) @db.Uuid
+  project_id   String       @db.Uuid
+  user_id      String       @db.Uuid
+  status       ExportStatus @default(pending)
+  file_path    String?
+  created_at   DateTime     @default(now())
+  completed_at DateTime?
+
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("exports")
 }
