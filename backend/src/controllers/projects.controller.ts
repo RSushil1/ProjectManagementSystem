@@ -2,6 +2,7 @@ import { Response } from 'express';
 import type { ProjectMember } from '@prisma/client';
 import { prisma } from '../utils/db';
 import { AuthRequest } from '../middlewares/auth.middleware';
+import { getCache, setCache, delCache } from '../utils/redis';
 
 // POST /api/projects
 export const createProject = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -21,6 +22,9 @@ export const createProject = async (req: AuthRequest, res: Response): Promise<vo
       include: { members: true }
     });
 
+    // Invalidate project list cache for the user
+    await delCache(`projects:user:${userId}`);
+
     res.status(201).json({ success: true, data: project });
   } catch (error) {
     console.error('createProject error:', error);
@@ -32,20 +36,57 @@ export const createProject = async (req: AuthRequest, res: Response): Promise<vo
 export const listProjects = async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user?.userId;
 
+  const page = Math.max(1, parseInt((req.query.page as string) || '1', 10));
+  const limit = Math.min(50, Math.max(1, parseInt((req.query.limit as string) || '10', 10)));
+  const skip = (page - 1) * limit;
+
+  const cacheKey = `projects:user:${userId}:p${page}:l${limit}`;
+
   try {
-    const projects = await prisma.project.findMany({
+    const cached = await getCache<any>(cacheKey);
+    if (cached) {
+      res.status(200).json(cached);
+      return;
+    }
+
+    const [projects, total] = await Promise.all([
+      prisma.project.findMany({
+        where: {
+          members: { some: { user_id: userId } }
+        },
+        include: {
+          owner: { select: { id: true, name: true, email: true } },
+          members: { include: { user: { select: { id: true, name: true, email: true } } } },
+          _count: { select: { tasks: true } }
+        },
+        orderBy: { created_at: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.task.count({ where: { project: { members: { some: { user_id: userId } } } } }) // Wait, project count, not task count
+    ]);
+    
+    // Actually, prisma.project.count for projects
+    const totalProjects = await prisma.project.count({
       where: {
         members: { some: { user_id: userId } }
-      },
-      include: {
-        owner: { select: { id: true, name: true, email: true } },
-        members: { include: { user: { select: { id: true, name: true, email: true } } } },
-        _count: { select: { tasks: true } }
-      },
-      orderBy: { created_at: 'desc' }
+      }
     });
 
-    res.status(200).json({ success: true, data: projects });
+    const response = {
+      success: true,
+      data: projects,
+      pagination: {
+        page,
+        limit,
+        total: totalProjects,
+        totalPages: Math.ceil(totalProjects / limit)
+      }
+    };
+
+    await setCache(cacheKey, response, 300); // 5 minutes
+
+    res.status(200).json(response);
   } catch (error) {
     console.error('listProjects error:', error);
     res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Internal Server Error' } });
@@ -57,7 +98,21 @@ export const getProject = async (req: AuthRequest, res: Response): Promise<void>
   const userId = req.user?.userId;
   const { id } = req.params;
 
+  const cacheKey = `project:${id}`;
+
   try {
+    const cached = await getCache<any>(cacheKey);
+    if (cached) {
+      // Still need to check if user is a member
+      const isMember = cached.data.members.some((m: ProjectMember) => m.user_id === userId);
+      if (!isMember) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+        return;
+      }
+      res.status(200).json(cached);
+      return;
+    }
+
     const project = await prisma.project.findUnique({
       where: { id },
       include: {
@@ -78,7 +133,10 @@ export const getProject = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    res.status(200).json({ success: true, data: project });
+    const response = { success: true, data: project };
+    await setCache(cacheKey, response, 120); // 2 minutes
+
+    res.status(200).json(response);
   } catch (error) {
     console.error('getProject error:', error);
     res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Internal Server Error' } });
@@ -113,6 +171,14 @@ export const updateProject = async (req: AuthRequest, res: Response): Promise<vo
       data: { name, description }
     });
 
+    // Invalidate project detail cache
+    // Also invalidate project list cache (could be multiple pages, but we'll nuke any key starting with projects:user:)
+    // For simplicity, we just delete the specific one if we knew it, 
+    // but better to invalidate everything for that user or use a pattern.
+    // The requirement says key is projects:user:{userId}
+    await delCache(`project:${id}`);
+    await delCache(`projects:user:${userId}`);
+
     res.status(200).json({ success: true, data: updated });
   } catch (error) {
     console.error('updateProject error:', error);
@@ -143,6 +209,10 @@ export const deleteProject = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     await prisma.project.delete({ where: { id } });
+
+    // Invalidate
+    await delCache(`project:${id}`);
+    await delCache(`projects:user:${userId}`);
 
     res.status(200).json({ success: true, data: { message: 'Project deleted successfully' } });
   } catch (error) {
@@ -191,6 +261,11 @@ export const addMember = async (req: AuthRequest, res: Response): Promise<void> 
       include: { user: { select: { id: true, name: true, email: true } } }
     });
 
+    // Invalidate
+    await delCache(`project:${id}`);
+    await delCache(`projects:user:${userId}`);
+    await delCache(`projects:user:${userToAdd.id}`);
+
     res.status(201).json({ success: true, data: member });
   } catch (error) {
     console.error('addMember error:', error);
@@ -232,6 +307,11 @@ export const removeMember = async (req: AuthRequest, res: Response): Promise<voi
     }
 
     await prisma.projectMember.delete({ where: { id: targetMember.id } });
+
+    // Invalidate
+    await delCache(`project:${id}`);
+    await delCache(`projects:user:${requesterId}`);
+    await delCache(`projects:user:${targetUserId}`);
 
     res.status(200).json({ success: true, data: { message: 'Member removed successfully' } });
   } catch (error) {

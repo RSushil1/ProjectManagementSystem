@@ -2,6 +2,7 @@ import { Response } from 'express';
 import type { ProjectMember } from '@prisma/client';
 import { prisma } from '../utils/db';
 import { AuthRequest } from '../middlewares/auth.middleware';
+import { delCache } from '../utils/redis';
 
 // GET /api/tasks?project_id=&status=&priority=&page=&limit=
 export const listTasks = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -102,6 +103,9 @@ export const createTask = async (req: AuthRequest, res: Response): Promise<void>
       },
       include: { assignee: { select: { id: true, name: true, email: true } } }
     });
+    
+    // Invalidate project detail cache
+    await delCache(`project:${project_id}`);
 
     res.status(201).json({ success: true, data: task });
   } catch (error) {
@@ -155,6 +159,9 @@ export const updateTask = async (req: AuthRequest, res: Response): Promise<void>
       include: { assignee: { select: { id: true, name: true, email: true } } }
     });
 
+    // Invalidate project detail cache
+    await delCache(`project:${task.project_id}`);
+
     res.status(200).json({ success: true, data: updated });
   } catch (error) {
     console.error('updateTask error:', error);
@@ -191,6 +198,9 @@ export const deleteTask = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     await prisma.task.delete({ where: { id } });
+
+    // Invalidate project detail cache
+    await delCache(`project:${task.project_id}`);
 
     res.status(200).json({ success: true, data: { message: 'Task deleted successfully' } });
   } catch (error) {
