@@ -60,6 +60,11 @@ describe('Projects API', () => {
     expect(res.status).toBe(401);
   });
 
+  it('2.5. GET /api/projects — returns 401 when no token is provided', async () => {
+    const res = await request(app).get('/api/projects');
+    expect(res.status).toBe(401);
+  });
+
   it('3. GET /api/projects — lists projects for the owner', async () => {
     const res = await request(app)
       .get('/api/projects')
