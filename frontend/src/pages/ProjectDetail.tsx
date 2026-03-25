@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuthContext } from '../context/AuthContext';
 import { useProject, useAddMember } from '../hooks/useProject';
 import { useCreateTask, useUpdateTaskStatus } from '../hooks/useTasks';
+import { useTriggerExport, useExportStatus, useExportHistory, downloadExportFile } from '../hooks/useExports';
 import { KanbanBoard } from '../components/KanbanBoard';
-import type { Task, ProjectMember } from '../types/api';
+import type { Task, ProjectMember, ExportRecord } from '../types/api';
 import { 
   ArrowLeft, Download, Plus, Users, Filter, 
-  Loader2, Mail, X, CheckSquare 
+  Loader2, Mail, X, CheckSquare, FileText,
+  AlertCircle, CheckCircle2, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 export const ProjectDetail = () => {
@@ -18,9 +20,44 @@ export const ProjectDetail = () => {
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [memberEmail, setMemberEmail] = useState('');
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [activeExportId, setActiveExportId] = useState<string | null>(null);
   
   const { mutate: updateTaskStatus } = useUpdateTaskStatus();
   const { mutate: addMember, isPending: isAddingMember } = useAddMember();
+
+  const { mutate: triggerExport, isPending: isTriggeringExport } = useTriggerExport();
+  const { data: activeExport } = useExportStatus(activeExportId);
+  const { data: historyResponse } = useExportHistory();
+
+  // Check if polling finished
+  useEffect(() => {
+    if (activeExport) {
+      if (activeExport.status === 'completed') {
+        // Stop polling handled inside hook via return false
+      } else if (activeExport.status === 'failed') {
+        alert('Export failed to process.');
+      }
+    }
+  }, [activeExport]);
+
+  const handleExport = () => {
+    triggerExport(id!, {
+      onSuccess: (data) => {
+        setActiveExportId(data.exportId);
+        setIsHistoryOpen(true); // Open history to show progress
+      },
+      onError: () => alert('Failed to start export'),
+    });
+  };
+
+  const handleDownload = async (exportId: string) => {
+    try {
+      await downloadExportFile(exportId);
+    } catch {
+      alert('Failed to download file');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -60,9 +97,13 @@ export const ProjectDetail = () => {
     priorityFilter === 'all' ? true : task.priority === priorityFilter
   );
 
+  const projectExports = historyResponse?.data?.filter(e => e.project_id === id) || [];
+  
+  // Check active polling vs general button state
+  const isExporting = isTriggeringExport || (activeExport && activeExport.status !== 'completed' && activeExport.status !== 'failed');
+
   return (
     <div className="min-h-screen bg-gray-50/50 pb-12">
-      {/* Top Navigation */}
       <nav className="bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -78,10 +119,24 @@ export const ProjectDetail = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all font-medium text-sm shadow-sm active:scale-95">
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Export</span>
-              </button>
+              {activeExport && activeExport.status === 'completed' && activeExportId === activeExport.id ? (
+                <button 
+                  onClick={() => handleDownload(activeExport.id)}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-xl hover:bg-green-100 transition-all font-medium text-sm shadow-sm active:scale-95"
+                >
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline">Download CSV</span>
+                </button>
+              ) : (
+                <button 
+                  onClick={handleExport}
+                  disabled={isExporting as boolean}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all font-medium text-sm shadow-sm active:scale-95 disabled:opacity-70 disabled:pointer-events-none"
+                >
+                  {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                  <span className="hidden sm:inline">{isExporting ? 'Exporting...' : 'Export'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -190,13 +245,79 @@ export const ProjectDetail = () => {
         </div>
 
         {/* Kanban Board */}
-        <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden min-h-[600px]">
+        <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden min-h-[600px] mb-8">
           <KanbanBoard 
             tasks={visibleTasks} 
             onTaskMove={(taskId, status) => {
               updateTaskStatus({ taskId, status, project_id: id! });
             }} 
           />
+        </div>
+
+        {/* Export History Module */}
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden">
+          <button 
+            onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+            className="w-full px-6 md:px-8 py-5 flex items-center justify-between hover:bg-gray-50/50 transition-colors text-left"
+          >
+            <div className="flex items-center gap-3">
+              <FileText className="w-5 h-5 text-gray-400" />
+              <h3 className="text-lg font-bold text-gray-900">Export History</h3>
+              {projectExports.length > 0 && (
+                <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-2 py-1 rounded-full border border-indigo-100">
+                  {projectExports.length}
+                </span>
+              )}
+            </div>
+            {isHistoryOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+          </button>
+          
+          {isHistoryOpen && (
+            <div className="px-6 md:px-8 pb-6 border-t border-gray-100 pt-4 bg-gray-50/30">
+              {projectExports.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center py-4">No exports found for this project.</p>
+              ) : (
+                <div className="space-y-3">
+                  {/* If there's an active export polling that isn't in history yet, maybe show it, but history usually gets it if we invalidate */}
+                  {projectExports.map((exp: ExportRecord) => (
+                    <div key={exp.id} className="flex items-center justify-between p-4 bg-white border border-gray-200 text-sm rounded-xl hover:border-indigo-200 transition-colors">
+                      <div className="flex items-center gap-3">
+                        {exp.status === 'completed' ? (
+                          <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600 shrink-0">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                        ) : exp.status === 'failed' ? (
+                          <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-600 shrink-0">
+                            <AlertCircle className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-semibold text-gray-900 capitalize">{exp.status} Export</p>
+                          <p className="text-gray-500 text-xs mt-0.5">
+                            {new Date(exp.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {exp.status === 'completed' && exp.download_url && (
+                        <button
+                          onClick={() => handleDownload(exp.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded-lg transition-colors border border-indigo-100"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Download</span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </main>
 
@@ -246,7 +367,7 @@ const CreateTaskModal = ({
   const errMessage = (error as any)?.response?.data?.error?.message || (error as Error)?.message;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={onClose} />
       
       <div className="relative bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-fade-in border border-gray-100">
@@ -322,7 +443,7 @@ const CreateTaskModal = ({
                 className="w-full px-4 py-2.5 bg-white border border-gray-200 text-gray-900 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
               >
                 <option value="">Unassigned</option>
-                {members.map(m => (
+                {members.map((m: ProjectMember) => (
                   <option key={m.user_id} value={m.user_id}>
                     {m.user?.name} ({m.user?.email})
                   </option>

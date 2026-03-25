@@ -66,3 +66,16 @@ export interface Task {
   created_at: string;
   assignee?: Pick<User, 'id' | 'name' | 'email'>;
 }
+
+export interface ExportRecord {
+  id: string;
+  project_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  created_at: string;
+  completed_at: string | null;
+  download_url?: string | null;
+  project?: {
+    id: string;
+    name: string;
+  };
+}
