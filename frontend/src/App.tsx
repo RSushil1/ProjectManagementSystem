@@ -1,13 +1,51 @@
 import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { Login } from './pages/Login';
+import { Register } from './pages/Register';
+import { Dashboard } from './pages/Dashboard';
+import { useAuthContext } from './context/AuthContext';
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated } = useAuthContext();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+};
+
+const PublicRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated } = useAuthContext();
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+};
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-      <h1 className="text-4xl font-bold text-blue-600 mb-4">
-        Project & Task Management System
-      </h1>
-      <p className="text-gray-600">Frontend Bootstrapped Successfully!</p>
-    </div>
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <Login />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <PublicRoute>
+            <Register />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
   );
 }
 
