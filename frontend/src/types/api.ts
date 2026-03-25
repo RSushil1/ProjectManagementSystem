@@ -48,6 +48,7 @@ export interface Project {
   created_at: string;
   owner?: Pick<User, 'id' | 'name' | 'email'>;
   members?: ProjectMember[];
+  tasks?: Task[];
   _count?: {
     tasks: number;
   };
@@ -55,12 +56,13 @@ export interface Project {
 
 export interface Task {
   id: string;
-  projectId: string;
+  project_id: string;
   title: string;
   description: string | null;
   status: 'todo' | 'in_progress' | 'done';
   priority: 'low' | 'medium' | 'high';
-  assignedTo: string | null;
-  dueDate: string | null;
-  createdAt: string;
+  assigned_to: string | null;
+  due_date: string | null;
+  created_at: string;
+  assignee?: Pick<User, 'id' | 'name' | 'email'>;
 }
