@@ -1,7 +1,7 @@
 # Full-Stack Project Management System
 
-**Developer:** Sushil Kumar (Sushil)  
-**Email:** s@gmail.com (Sample)
+**Developer:** Sushil Singh Rathore (Sushil)  
+**Email:** sushilsinghrathore1998@gmail.com (Sample)
 
 ## Overview
 A comprehensive, full-stack project management application built with a modern stack featuring secure authentication, paginated dashboards, Kanban drag-and-drop task management, and asynchronous background worker processing for CSV exports.
